@@ -7,10 +7,6 @@ import "./App.css";
 export default function App() {
   const [page, setPage] = useState("landing");
 
-  function handleAccountCreated() {
-    setPage("dashboard");
-  }
-
   if (page === "dashboard") {
     return <Dashboard />;
   }
@@ -19,10 +15,8 @@ export default function App() {
     return (
       <Signup
         onBack={() => setPage("landing")}
-        onSignIn={() =>
-          window.alert("Sign-in authentication is not configured yet.")
-        }
-        onAccountCreated={handleAccountCreated}
+        onSignIn={() => window.alert("Sign-in is not configured yet.")}
+        onAccountCreated={() => setPage("dashboard")}
       />
     );
   }

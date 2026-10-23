@@ -46,9 +46,7 @@ export default function Signup({ onSignIn, onBack, onAccountCreated }) {
       return;
     }
 
-    setSuccess(
-      "Form validated successfully. Connect an authentication service to create your account."
-    );
+    onAccountCreated?.(form.name);
   }
 
   return (
@@ -209,4 +207,7 @@ export default function Signup({ onSignIn, onBack, onAccountCreated }) {
     </main>
   );
 }
+
+
+
 
