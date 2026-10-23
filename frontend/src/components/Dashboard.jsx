@@ -1,338 +1,597 @@
-﻿import React, { useState } from "react";
-import { testGenerate } from "../services/api";
+﻿
+import { useState, useRef, useEffect } from "react";
 import "./Dashboard.css";
-
-const agents = [
-  { icon: "⌕", name: "Research Agent", desc: "Research and gather information" },
-  { icon: "▥", name: "Analysis Agent", desc: "Analyze data and find insights" },
-  { icon: "✎", name: "Writing Agent", desc: "Create structured reports" },
-  { icon: "✓", name: "Verification Agent", desc: "Check answers for accuracy" },
-];
 
 const suggestions = [
   {
-    icon: "▤",
-    title: "Summarize a document",
-    description: "Understand the key findings of a paper",
-    prompt: "Explain how to summarize a research paper and identify its key findings.",
+    icon: "✦",
+    title: "Write something",
+    description: "Create content, emails, and documents",
+    prompt: "Help me write a professional email",
+  },
+  {
+    icon: "⌘",
+    title: "Code assistant",
+    description: "Write, debug, and explain code",
+    prompt: "Help me debug my code",
+  },
+  {
+    icon: "◈",
+    title: "Analyze data",
+    description: "Understand data and find insights",
+    prompt: "Help me analyze a dataset",
   },
   {
     icon: "⌕",
-    title: "Explore a topic",
-    description: "Learn about a new technology",
-    prompt: "Explain how AI agents work, with practical examples.",
-  },
-  {
-    icon: "▥",
-    title: "Analyze information",
-    description: "Discover patterns and insights",
-    prompt: "Explain a step-by-step approach to analyzing a dataset.",
-  },
-  {
-    icon: "✧",
-    title: "Help me build a project",
-    description: "Plan an AI or machine learning project",
-    prompt: "Suggest a practical AI project using Ollama, Python, and FastAPI.",
+    title: "Research a topic",
+    description: "Explore ideas and understand concepts",
+    prompt: "Explain an interesting AI concept",
   },
 ];
 
+const agentList = [
+  { icon: "✦", name: "Research Agent", status: "Ready" },
+  { icon: "⌘", name: "Coding Agent", status: "Ready" },
+  { icon: "◈", name: "Data Agent", status: "Ready" },
+  { icon: "✎", name: "Writing Agent", status: "Ready" },
+];
+
+const toolList = [
+  { icon: "⌕", name: "Web Search" },
+  { icon: "▤", name: "File Analysis" },
+  { icon: "⌘", name: "Code Interpreter" },
+];
+
 export default function Dashboard() {
-  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [agentsOpen, setAgentsOpen] = useState(false);
+  const [messages, setMessages] = useState([]);
+  const [recentChats, setRecentChats] = useState([]);
+  const [activeChat, setActiveChat] = useState(null);
   const [model, setModel] = useState("llama3.2");
+  const [agentsOpen, setAgentsOpen] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [selectedFile, setSelectedFile] = useState(null);
+  const [activeNav, setActiveNav] = useState("Chat");
+  const fileRef = useRef(null);
+  const inputRef = useRef(null);
 
-  async function sendMessage(text = input) {
-    const prompt = text.trim();
-    if (!prompt || busy) return;
-
-    setInput("");
-    setError("");
-    setMessages((previous) => [
-      ...previous,
-      { role: "user", content: prompt },
-    ]);
-    setBusy(true);
-
-    try {
-      const result = await testGenerate(prompt, model);
-
-      if (!result.success) {
-        throw new Error(result.error || "The AI request failed.");
-      }
-
-      setMessages((previous) => [
-        ...previous,
-        {
-          role: "assistant",
-          content: result.response,
-          model: result.model_used || model,
-        },
-      ]);
-    } catch (err) {
-      setError(
-        `${err.message}. Check that FastAPI and Ollama are running.`
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
 
   function newChat() {
     setMessages([]);
     setInput("");
+    setActiveChat(null);
     setError("");
     setSelectedFile(null);
+    setActiveNav("Chat");
+    inputRef.current?.focus();
   }
 
-  function attachFile(event) {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  function openChat(chat) {
+    setActiveChat(chat.id);
+    setMessages(chat.messages);
+    setError("");
+    setActiveNav("Chat");
+  }
 
-    setSelectedFile(file);
-    setInput(
-      (previous) =>
-        `${previous}${previous ? "\n" : ""}Please analyze this document: ${file.name}`
-    );
+  async function sendMessage(text = input) {
+    const prompt = text.trim();
+    if ((!prompt && !selectedFile) || loading) return;
+
+    const userText = selectedFile
+      ? `${prompt}\n\nAttached file: ${selectedFile.name}`
+      : prompt;
+
+    const userMessage = {
+      role: "user",
+      content: userText,
+    };
+
+    const updatedMessages = [...messages, userMessage];
+
+    setMessages(updatedMessages);
+    setInput("");
+    setError("");
+    setLoading(true);
+
+    const chatId = activeChat || Date.now();
+    const chatTitle =
+      prompt.slice(0, 42) || selectedFile?.name || "New conversation";
+
+    if (!activeChat) {
+      setActiveChat(chatId);
+      setRecentChats((previous) => [
+        {
+          id: chatId,
+          title: chatTitle,
+          messages: updatedMessages,
+        },
+        ...previous,
+      ]);
+    } else {
+      setRecentChats((previous) =>
+        previous.map((chat) =>
+          chat.id === chatId
+            ? { ...chat, messages: updatedMessages }
+            : chat
+        )
+      );
+    }
+
+    setSelectedFile(null);
+
+    try {
+      const response = await fetch(
+        "http://127.0.0.1:8000/api/test-generate",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            prompt: userText,
+            message: userText,
+            model,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Backend returned ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      const answer =
+        data.response ??
+        data.answer ??
+        data.message ??
+        data.generated_text ??
+        data.output;
+
+      if (typeof answer !== "string" || !answer.trim()) {
+        throw new Error(
+          "The backend response did not contain a text answer."
+        );
+      }
+
+      const finalMessages = [
+        ...updatedMessages,
+        { role: "assistant", content: answer },
+      ];
+
+      setMessages(finalMessages);
+
+      setRecentChats((previous) =>
+        previous.map((chat) =>
+          chat.id === chatId
+            ? { ...chat, messages: finalMessages }
+            : chat
+        )
+      );
+    } catch (err) {
+      setError(
+        `Couldn't connect to the AI backend. ${err.message}. Check that FastAPI is running and the endpoint is correct.`
+      );
+    } finally {
+      setLoading(false);
+      inputRef.current?.focus();
+    }
+  }
+
+  function handleKeyDown(event) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      sendMessage();
+    }
+  }
+
+  function startVoiceInput() {
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setError("Voice input is not supported in this browser.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-IN";
+    recognition.interimResults = false;
+    recognition.onresult = (event) => {
+      setInput((previous) =>
+        `${previous} ${event.results[0][0].transcript}`.trim()
+      );
+    };
+    recognition.onerror = () => {
+      setError("Voice input failed. Please check your microphone permission.");
+    };
+    recognition.start();
   }
 
   return (
-    <main className={`af-dashboard ${agentsOpen ? "agents-open" : ""}`}>
-      <aside className="afd-sidebar">
-        <button className="afd-brand" onClick={newChat} type="button">
-          <span className="afd-brand-symbol">✦</span>
-          <span>AgentFlow <b>AI</b></span>
+    <div className="af-dashboard">
+      <aside className="af-sidebar">
+        <div className="af-brand">
+          <div className="af-brand-icon">✦</div>
+          <div>
+            <h2>AgentFlow <span>AI</span></h2>
+            <p>Your intelligent workspace</p>
+          </div>
+        </div>
+
+        <button className="af-new-chat" onClick={newChat}>
+          <span>＋</span> New conversation
+          <span className="af-shortcut">⌘ K</span>
         </button>
 
-        <button className="afd-new-chat" onClick={newChat} type="button">
-          <span>＋</span> New chat
-        </button>
+        <div className="af-sidebar-label">WORKSPACE</div>
 
-        <div className="afd-side-label">WORKSPACE</div>
-
-        <nav className="afd-navigation">
-          <button className="afd-nav-item active" onClick={newChat} type="button">
-            <span>⌂</span> Chat
-          </button>
-          <button
-            className="afd-nav-item"
-            onClick={() => document.getElementById("afd-file")?.click()}
-            type="button"
-          >
-            <span>▤</span> Documents
-          </button>
-          <button
-            className="afd-nav-item"
-            onClick={() => setAgentsOpen((open) => !open)}
-            type="button"
-          >
-            <span>♧</span> AI agents
-          </button>
+        <nav className="af-nav">
+          {[
+            ["✦", "Chat"],
+            ["◈", "AI Agents"],
+            ["▤", "My Files"],
+            ["◷", "History"],
+          ].map(([icon, label]) => (
+            <button
+              key={label}
+              className={`af-nav-item ${
+                activeNav === label ? "active" : ""
+              }`}
+              onClick={() => {
+                setActiveNav(label);
+                if (label === "Chat") inputRef.current?.focus();
+              }}
+            >
+              <span className="af-nav-icon">{icon}</span>
+              {label}
+              {label === "AI Agents" && (
+                <span className="af-nav-count">4</span>
+              )}
+            </button>
+          ))}
         </nav>
 
-        <div className="afd-sidebar-bottom">
-          <div className="afd-local-badge"><span /> Ollama connection</div>
-          <div className="afd-profile">
-            <span className="afd-avatar">M</span>
-            <span><b>Manasa</b><small>AgentFlow workspace</small></span>
+        <div className="af-sidebar-label af-recent-label">
+          RECENT CONVERSATIONS
+        </div>
+
+        <div className="af-recent-list">
+          {recentChats.length === 0 ? (
+            <p className="af-empty-recent">Your conversations will appear here.</p>
+          ) : (
+            recentChats.map((chat) => (
+              <button
+                key={chat.id}
+                className={`af-recent-item ${
+                  activeChat === chat.id ? "active" : ""
+                }`}
+                onClick={() => openChat(chat)}
+                title={chat.title}
+              >
+                <span>◷</span>
+                <span className="af-recent-title">{chat.title}</span>
+              </button>
+            ))
+          )}
+        </div>
+
+        <div className="af-sidebar-bottom">
+          <div className="af-plan-card">
+            <div className="af-plan-top">
+              <span className="af-plan-star">✦</span>
+              <span>AgentFlow Pro</span>
+            </div>
+            <p>Unlock more possibilities with AI agents.</p>
+            <button onClick={() => setError("Plan settings are not connected yet.")}>
+              Explore plans <span>↗</span>
+            </button>
           </div>
+
+          <button className="af-profile">
+            <div className="af-avatar">U</div>
+            <div className="af-profile-text">
+              <strong>Your account</strong>
+              <span>Personal workspace</span>
+            </div>
+            <span className="af-profile-menu">•••</span>
+          </button>
         </div>
       </aside>
 
-      <section className="afd-workspace">
-        <header className="afd-topbar">
-          <div>
-            <h2>Chat</h2>
-            <span className="afd-subtitle">Your personal AI workspace</span>
+      <main className="af-main">
+        <header className="af-topbar">
+          <div className="af-breadcrumb">
+            <span>Workspace</span>
+            <span className="af-breadcrumb-divider">/</span>
+            <strong>{activeNav}</strong>
           </div>
 
-          <div className="afd-topbar-actions">
-            <label className="afd-model-select">
-              <span>Model</span>
-              <select value={model} onChange={(event) => setModel(event.target.value)}>
-                <option value="llama3.2">llama3.2</option>
-                <option value="qwen3">qwen3</option>
-              </select>
-            </label>
+          <div className="af-topbar-actions">
+            <span className="af-status-dot" />
+            <span className="af-status-text">AI services</span>
             <button
-              className={`afd-agents-toggle ${agentsOpen ? "selected" : ""}`}
-              onClick={() => setAgentsOpen((open) => !open)}
-              type="button"
+              className="af-panel-toggle"
+              onClick={() => setAgentsOpen((value) => !value)}
+              title="Toggle agents panel"
             >
-              ♧ Agents {agentsOpen ? "×" : "+"}
+              ▤
             </button>
           </div>
         </header>
 
-        <section className={`afd-chat-area ${messages.length ? "has-messages" : ""}`}>
+        <div className="af-chat-area">
           {messages.length === 0 ? (
-            <div className="afd-welcome">
-              <div className="afd-welcome-symbol">✦</div>
-              <div className="afd-welcome-label">YOUR AI WORKSPACE</div>
-              <h1>What can I help you with?</h1>
-              <p>
-                Ask questions, explore ideas, and work through problems
-                with your local AI model.
+            <section className="af-welcome">
+              <div className="af-welcome-badge">
+                <span className="af-sparkle">✦</span>
+                YOUR AI WORKSPACE
+              </div>
+
+              <h1>
+                What can I help
+                <br />
+                you <span>accomplish?</span>
+              </h1>
+
+              <p className="af-welcome-description">
+                One workspace. Multiple AI agents. Endless possibilities.
+                <br className="af-desktop-break" />
+                Tell me what you need, and let's make it happen.
               </p>
 
-              <div className="afd-suggestion-grid">
+              <div className="af-suggestions">
                 {suggestions.map((item) => (
                   <button
-                    className="afd-suggestion"
+                    className="af-suggestion-card"
                     key={item.title}
-                    type="button"
                     onClick={() => sendMessage(item.prompt)}
                   >
-                    <span className="afd-suggestion-icon">{item.icon}</span>
-                    <b>{item.title}</b>
-                    <small>{item.description}</small>
+                    <div className="af-suggestion-icon">{item.icon}</div>
+                    <strong>{item.title}</strong>
+                    <p>{item.description}</p>
+                    <span className="af-suggestion-arrow">↗</span>
                   </button>
                 ))}
               </div>
-            </div>
+
+              <div className="af-example-label">OR START WITH A PROMPT</div>
+
+              <div className="af-quick-prompts">
+                {[
+                  "Explain a complex concept simply",
+                  "Build me a project roadmap",
+                  "Help me solve a coding problem",
+                ].map((prompt) => (
+                  <button
+                    key={prompt}
+                    onClick={() => setInput(prompt)}
+                  >
+                    <span>✧</span> {prompt} <span>↗</span>
+                  </button>
+                ))}
+              </div>
+            </section>
           ) : (
-            <div className="afd-messages">
+            <section className="af-messages">
               {messages.map((message, index) => (
-                <article className={`afd-message ${message.role}`} key={index}>
-                  <div className="afd-message-avatar">
-                    {message.role === "user" ? "M" : "✦"}
+                <div
+                  key={`${index}-${message.role}`}
+                  className={`af-message af-message-${message.role}`}
+                >
+                  <div className="af-message-avatar">
+                    {message.role === "user" ? "U" : "✦"}
                   </div>
-                  <div className="afd-message-body">
-                    <b>{message.role === "user" ? "You" : "AgentFlow AI"}</b>
-                    <p>{message.content}</p>
-                    {message.model && (
-                      <small className="afd-response-model">
-                        Model: {message.model}
-                      </small>
-                    )}
+                  <div className="af-message-body">
+                    <div className="af-message-author">
+                      {message.role === "user" ? "You" : "AgentFlow AI"}
+                    </div>
+                    <div className="af-message-content">
+                      {message.content}
+                    </div>
                   </div>
-                </article>
+                </div>
               ))}
-              {busy && (
-                <div className="afd-thinking">
-                  <span className="afd-spinner" />
-                  Thinking with Ollama...
+
+              {loading && (
+                <div className="af-message af-message-assistant">
+                  <div className="af-message-avatar">✦</div>
+                  <div className="af-message-body">
+                    <div className="af-message-author">AgentFlow AI</div>
+                    <div className="af-loading">
+                      <span />
+                      <span />
+                      <span />
+                      <small>Thinking...</small>
+                    </div>
+                  </div>
                 </div>
               )}
-            </div>
-          )}
-        </section>
 
-        <div className="afd-composer-wrap">
-          {selectedFile && (
-            <div className="afd-file-chip">
-              <span>▤</span> {selectedFile.name}
-              <button
-                type="button"
-                onClick={() => setSelectedFile(null)}
-                aria-label="Remove selected file"
-              >×</button>
-              <small>File selected; its contents are not uploaded yet.</small>
+              <div className="af-message-end" />
+            </section>
+          )}
+
+          {error && (
+            <div className="af-error">
+              <span>⚠</span>
+              <p>{error}</p>
+              <button onClick={() => setError("")}>×</button>
             </div>
           )}
 
-          {error && <div className="afd-error" role="alert">{error}</div>}
-
-          <form
-            className="afd-composer"
-            onSubmit={(event) => {
-              event.preventDefault();
-              sendMessage();
-            }}
-          >
-            <textarea
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  sendMessage();
-                }
-              }}
-              placeholder="Message AgentFlow AI..."
-              rows={2}
-              disabled={busy}
-              aria-label="Message AgentFlow AI"
-            />
-
-            <div className="afd-composer-footer">
-              <div className="afd-composer-tools">
-                <label className="afd-tool" title="Select a document">
-                  ＋ Attach file
-                  <input
-                    id="afd-file"
-                    type="file"
-                    accept=".pdf,.txt,.csv,.doc,.docx"
-                    hidden
-                    onChange={attachFile}
-                  />
-                </label>
-                <span className="afd-local-note"><span /> Local AI</span>
-              </div>
-
-              <button
-                className="afd-send"
-                type="submit"
-                disabled={busy || !input.trim()}
-                aria-label="Send message"
+          <div className="af-composer-wrap">
+            <div className="af-model-row">
+              <label htmlFor="af-model">Model</label>
+              <select
+                id="af-model"
+                value={model}
+                onChange={(event) => setModel(event.target.value)}
               >
-                {busy ? "…" : "↑"}
-              </button>
+                <option value="llama3.2">Llama 3.2</option>
+                <option value="qwen3">Qwen 3</option>
+                <option value="mistral">Mistral</option>
+              </select>
+              <span className="af-model-local">● Local model</span>
             </div>
-          </form>
 
-          <p className="afd-disclaimer">
-            AI can make mistakes. Verify important information.
-          </p>
+            <div className="af-composer">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Message AgentFlow AI..."
+                rows={2}
+                aria-label="Message AgentFlow AI"
+              />
+
+              {selectedFile && (
+                <div className="af-file-chip">
+                  <span>▤</span>
+                  {selectedFile.name}
+                  <button
+                    onClick={() => setSelectedFile(null)}
+                    aria-label="Remove attachment"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+
+              <div className="af-composer-bottom">
+                <div className="af-composer-tools">
+                  <button
+                    title="Attach a file"
+                    onClick={() => fileRef.current?.click()}
+                  >
+                    <span>＋</span> Attach
+                  </button>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    hidden
+                    onChange={(event) =>
+                      setSelectedFile(event.target.files?.[0] || null)
+                    }
+                  />
+                  <button
+                    title="Web search is not connected yet"
+                    onClick={() =>
+                      setError("Web search needs to be connected to your backend.")
+                    }
+                  >
+                    ⌕ <span>Search</span>
+                  </button>
+                </div>
+
+                <div className="af-composer-actions">
+                  <button
+                    className="af-voice-button"
+                    onClick={startVoiceInput}
+                    title="Voice input"
+                  >
+                    ♩
+                  </button>
+                  <button
+                    className="af-send-button"
+                    onClick={() => sendMessage()}
+                    disabled={loading || (!input.trim() && !selectedFile)}
+                    title="Send message"
+                  >
+                    {loading ? "…" : "↑"}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <p className="af-disclaimer">
+              AI can make mistakes. Verify important information.
+            </p>
+          </div>
         </div>
-      </section>
+      </main>
 
       {agentsOpen && (
-        <>
-          <button
-            className="afd-panel-backdrop"
-            aria-label="Close agents panel"
-            onClick={() => setAgentsOpen(false)}
-            type="button"
-          />
-          <aside className="afd-right-panel">
-            <header className="afd-panel-heading">
-              <div>
-                <h3>AI agents</h3>
-                <p>Optional workspace tools</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setAgentsOpen(false)}
-                aria-label="Close agents panel"
-              >×</button>
-            </header>
+        <aside className="af-right-panel">
+          <div className="af-panel-heading">
+            <div>
+              <h3>AI Workspace</h3>
+              <p>Your intelligent team</p>
+            </div>
+            <button
+              onClick={() => setAgentsOpen(false)}
+              aria-label="Close AI workspace panel"
+            >
+              ×
+            </button>
+          </div>
 
-            <div className="afd-agent-info">
-              <span>✦</span>
-              <p>Specialized agents can be connected to your research workflow.</p>
+          <div className="af-panel-section">
+            <div className="af-section-title">
+              <span>ACTIVE AGENTS</span>
+              <span className="af-section-count">04</span>
             </div>
 
-            {agents.map((agent) => (
-              <article className="afd-agent" key={agent.name}>
-                <span className={`afd-agent-icon ${agent.tone}`}>{agent.icon}</span>
-                <div>
-                  <b>{agent.name}</b>
-                  <small>{agent.desc}</small>
+            <div className="af-agent-list">
+              {agentList.map((agent, index) => (
+                <div className="af-agent-item" key={agent.name}>
+                  <div className={`af-agent-icon af-agent-icon-${index}`}>
+                    {agent.icon}
+                  </div>
+                  <div className="af-agent-info">
+                    <strong>{agent.name}</strong>
+                    <span><i /> {agent.status}</span>
+                  </div>
+                  <span className="af-agent-menu">•••</span>
                 </div>
-              </article>
-            ))}
+              ))}
+            </div>
+          </div>
 
-            <p className="afd-agent-footnote">
-              These are currently agent options in the interface.
-              Independent agent execution requires a configured workflow.
-            </p>
-          </aside>
-        </>
+          <div className="af-panel-section af-tools-section">
+            <div className="af-section-title">
+              <span>AVAILABLE TOOLS</span>
+              <span className="af-section-count">03</span>
+            </div>
+
+            <div className="af-tool-list">
+              {toolList.map((tool) => (
+                <button
+                  className="af-tool-item"
+                  key={tool.name}
+                  onClick={() =>
+                    setError(`${tool.name} is displayed as a preview and is not connected yet.`)
+                  }
+                >
+                  <span className="af-tool-icon">{tool.icon}</span>
+                  <span>{tool.name}</span>
+                  <span className="af-tool-arrow">↗</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="af-activity-card">
+            <div className="af-activity-icon">✧</div>
+            <strong>Work smarter with agents</strong>
+            <p>Delegate tasks to specialized AI agents and bring everything together in one place.</p>
+            <button onClick={() => setActiveNav("AI Agents")}>
+              Explore agents <span>→</span>
+            </button>
+          </div>
+
+          <div className="af-panel-footer">
+            <span className="af-footer-pulse" />
+            All systems operational
+            <span className="af-footer-version">v1.0</span>
+          </div>
+        </aside>
       )}
-    </main>
+    </div>
   );
 }
