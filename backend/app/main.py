@@ -6,6 +6,7 @@ from typing import Optional
 
 from app.config import settings
 from app.core.ollama_client import ollama_client
+from app.api.chat import router as chat_router
 
 app = FastAPI(
     title="AgentFlow AI API",
@@ -97,3 +98,7 @@ async def test_generate(req: TestPromptRequest):
             status_code=503,
             detail=f"Generation failed: {exc}",
         ) from exc
+
+
+# Register the chat API from app/api/chat.py
+app.include_router(chat_router)
