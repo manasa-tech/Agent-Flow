@@ -21,7 +21,7 @@ const sendMessage = async () => {
     setError("");
 
     try {
-        // Send the message to the FastAPI backend
+        // Connect to the FastAPI backend
         const response = await fetch(
             "http://127.0.0.1:8000/api/test-generate",
             {
@@ -61,7 +61,7 @@ const sendMessage = async () => {
 
         setMessages(finalMessages);
 
-        // Update recent chats if your component uses this state
+        // Update recent chats, if supported
         if (typeof setRecentChats === "function") {
             setRecentChats((previous) =>
                 previous.map((chat) =>
