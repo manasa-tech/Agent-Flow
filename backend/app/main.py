@@ -1,12 +1,14 @@
 
+from typing import Optional
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional
 
 from app.config import settings
 from app.core.ollama_client import ollama_client
 from app.api.chat import router as chat_router
+
 
 app = FastAPI(
     title="AgentFlow AI API",
@@ -14,11 +16,11 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# Allow the React + Vite frontend to connect
+
+# Allow the React + Vite frontend to connect to FastAPI.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -34,7 +36,9 @@ class TestPromptRequest(BaseModel):
 
 @app.get("/")
 async def root():
-    return {"message": "AgentFlow AI backend is running"}
+    return {
+        "message": "AgentFlow AI backend is running"
+    }
 
 
 @app.get("/api/health")
@@ -100,5 +104,5 @@ async def test_generate(req: TestPromptRequest):
         ) from exc
 
 
-# Register the chat API from app/api/chat.py
+# Register the chat API.
 app.include_router(chat_router)
